@@ -1,0 +1,14 @@
+# api keys - never upload these
+.env
+
+# python cache files
+__pycache__/
+*.pyc
+*.pyo
+
+# logs
+logs/
+
+# vs code settings
+.vscode/
+.env.*
