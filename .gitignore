@@ -11,3 +11,7 @@ logs/
 
 # vs code settings
 .vscode/
+
+# libre office lock files
+.~lock.*
+
