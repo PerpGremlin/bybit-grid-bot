@@ -1,61 +1,35 @@
 # ==============================================================
-# bot.py    - connection test
+# bot.py    - bybit grid bot
 # purpose:  automatically places and manages a grid of buy 
 #           sell orders on bybit, without optional trailing
 # author:   perpgremlin-
 # date:     march 2026
 #==============================================================
 
-# pybit is the official bybit python library
-# HTTP is the class we use for standard api requests (not websocket) 
+# ---- imports ----------------------------------------------
 
+# pybit handles all communication with bybit's api
+# HTTP is used for standard request/response calls 
 from pybit.unified_trading import HTTP
 
-# dotenv lets us load avriables from our .env file
-# this keeps our api keys out of the code itself
-
+# dotenv loads our .env file so python can read our api keys 
 from dotenv import load_dotenv
 
-# os lets us read environmenmt variables once they're loaded
-
+# os lets us read environment variables like api keys
 import os
 
-# --- load api keys --- 
-# this reads the .env file and loads its content into the environment
-# so os.getenv() can access them below
+# time lets us pause the bot between loops
+# without this the bot would hammer bybit's api constantly
+import time
 
-load_dotenv() 
+# logging writes the bot's activity to a file
+# so we can see exactlly what happened and when
+import logging
 
-# --- create bybit session ---
+# math gives us tools for rounding prices to valid levels
+# bybit rejects orders with too many decimal places
+import math
 
-# HTTP() creates a connection session to bybit's api
-# testnet=True means that we are connecting to the fake money
-# environment at testnet.bybit.com, not real bybit
-# api_key and api_secret are pulled from the .env file - 
-# os.getenv() looks up variable name and returns its value
-
-session = HTTP(
-    testnet=True,
-    api_key=os.getenv("BYBIT_API_KEY"),         # your public api key  
-    api_secret=os.getenv("BYBIT_API_SECRET")    # your private secret - never share
-)
-
-# --- make a test request --- 
-
-# get_tickers() asks bybit for current market data 
-# cagetory="spot" means the spot market (not futures or perps)
-# symbol="BTCUSDT" is the trading pair we're asking about
-#this is a read-only request - it doesn't place any orders
-
-response = session.get_tickers(
-    category="spot",
-    symbol="BTCUSDT"
-)
-
-# --- print the result --- 
-
-# print the raw response so we can see what bybit sent back
-# if this shows price date, our connection is working 
-# if this shows an error, something is wrong with the keys
-
-print(response)
+# config id our own file - imports all our trading strategies
+# this is how bot.py reads everything from config.py
+import config
