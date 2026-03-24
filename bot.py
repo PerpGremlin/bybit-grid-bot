@@ -61,3 +61,33 @@ logger.info(f"symbol: {config.SYMBOL} | category: {config.CATEGORY}")
 logger.info(f"grid range: {config.GRID_LOWER_PRICE} - {config.GRID_UPPER_PRICE}")
 logger.info(f"grid levels:{config.GRID_NUM_LEVELS} | order size: {config.GRID_ORDER_SIZE} USDT")
 logger.info(f"trailing enabled: {config.TRAILING_ENABLED} | direction: {config.TRAIL_DIRECTION}")
+
+# ---- load api keys and connect to bybit ------------------
+
+# load the .env file so python can read our api keys
+# this must be called before any os.getenv() calls
+load_dotenv()
+
+# read the api keys from environment variables
+API_KEY = os.getenv("BYBIT_API_KEY")
+API_SECRET = os.getenv("BYBIT_API_SECRET")
+
+# safely check - if keys are missing, stop immediately
+# better to crash here than run with no authentication
+if not API_KEY or not API_SECRET:
+    logger.error("api keys not found in .env file - bot cannot start")
+    raise SystemExit("missing api keys - check your .env file")
+
+# create the bybit session
+# this is the bot's phone line to bybit's servers
+# testnet=True means we connect to fake money environment
+# when live trading, change testnet=False
+session = HTTP(
+    testnet=True,
+    api_key=API_KEY,
+    api_secret=API_SECRET
+)
+
+logger.info("bybit session created successfully")
+logger.info(f"testnet mode: {os.getenv('BYBIT_TESTNET', 'true')}")
+
