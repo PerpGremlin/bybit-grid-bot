@@ -11,4 +11,3 @@ logs/
 
 # vs code settings
 .vscode/
-.env.*

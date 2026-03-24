@@ -1,7 +1,7 @@
 # ==============================================================
 # bot.py    - connection test
-# purpose:  verify that our API keys work and that we can talk 
-#           to bybit's testnet servers successfully
+# purpose:  automatically places and manages a grid of buy 
+#           sell orders on bybit, without optional trailing
 # author:   perpgremlin-
 # date:     march 2026
 #==============================================================
