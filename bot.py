@@ -6,6 +6,7 @@
 # date:     march 2026
 #==============================================================
 
+
 # ---- imports ----------------------------------------------
 
 # pybit handles all communication with bybit's api
@@ -33,6 +34,7 @@ import math
 # config id our own file - imports all our trading strategies
 # this is how bot.py reads everything from config.py
 import config
+
 
 # ---- logging setup ----------------------------------------
 
@@ -62,6 +64,7 @@ logger.info(f"grid range: {config.GRID_LOWER_PRICE} - {config.GRID_UPPER_PRICE}"
 logger.info(f"grid levels:{config.GRID_NUM_LEVELS} | order size: {config.GRID_ORDER_SIZE} USDT")
 logger.info(f"trailing enabled: {config.TRAILING_ENABLED} | direction: {config.TRAIL_DIRECTION}")
 
+
 # ---- load api keys and connect to bybit ------------------
 
 # load the .env file so python can read our api keys
@@ -90,6 +93,7 @@ session = HTTP(
 
 logger.info("bybit session created successfully")
 logger.info(f"testnet mode: {os.getenv('BYBIT_TESTNET', 'true')}")
+
 
 # ---- grid calculation functions ---------------------------
 
@@ -153,3 +157,187 @@ if current_price:
     logger.info(f"total levels: {len(levels)}")
     logger.info(f"buy levels: {buy_levels}")
     logger.info(f"sell levels: {sell_levels}")
+
+
+# ---- order placement functions ----------------------------
+
+def get_account_balance():
+    # ask bybit for our current USDT balance
+    # we use this to check against against out STOP_LOSS_BALANCE
+    try:
+        response = session.get_wallet_balance(
+            accountType="UNIFIED"
+        )
+        # dig into the response to find USDT balance
+        # the coin list contains all assets in the account
+        coin_list = response['result']['list'][0]['coin']
+
+        # if coin list is empty, no funds are in the unified trading account
+        if not coin_list:
+            logger.warning("no funds found in unified trading account")
+            return None
+
+        # loop through coins to find USDT
+        for coin in coin_list:
+            if coin['coin'] == 'USDT':
+                balance = float(coin['walletBalance'])
+                logger.info(f"account balance: {balance} USDT")
+                return balance
+
+        logger.warning("USDT balance not found in unified trading account")
+        return None
+
+    except Exception as e:
+        logger.error(f"failed to get balance: {e}")
+        return None
+
+# ---- alternate function displaying all asset balances ------
+
+# def get_account_balance():
+#    # ask bybit for all assets in the unified trading account
+#    # displays any asset with a USD value over $1
+#    # returns USDT balance for the stop loss check
+#    try:
+#        response = session.get_wallet_balance(
+#            accountType="UNIFIED"
+#        )
+#        # get the coin list from the response
+#        coin_list = response['result']['list'][0]['coin']
+#
+#        # if coin list is empty, no funds in unified account
+#        if not coin_list:
+#            logger.warning("no funds found in unified account")
+#            return None
+#
+#        # log total account equity first
+#        total_equity = response['result']['list'][0]['totalEquity']
+#        logger.info(f"total account equity: ${float(total_equity):,.2f}")
+#        logger.info("--- assets with value over $1 ---")
+#
+#        # loop through all coins and display those worth over $1
+#        usdt_balance = None
+#        for coin in coin_list:
+#            usd_value = float(coin['usdValue'])
+#            if usd_value > 1:
+#                wallet_balance = float(coin['walletBalance'])
+#                coin_name = coin['coin']
+#                logger.info(f"{coin_name}: {wallet_balance} (${usd_value:,.2f})")
+#                # save USDT balance separately for stop loss check
+#                if coin_name == 'USDT':
+#                    usdt_balance = wallet_balance
+#
+#        logger.info("--- end of assets ---")
+#        return usdt_balance
+#
+#    except Exception as e:
+#        logger.error(f"failed to get balance: {e}")
+#        return None
+
+def place_order(side, price, qty):
+    # place a single limit order on bybit
+    # side = "Buy" or "Sell"
+    # price = the price level to place the order at
+    # qty = how much to buy or sell (in base currency e.g. BTC)
+    try:
+        response = session.place_order(
+            category=config.CATEGORY,
+            symbol=config.SYMBOL,
+            side=side,
+            orderType="Limit",
+            price=str(price),
+            qty=str(qty), 
+            timeInForce="GTC"
+        )
+        # GTC means Godd Till Cancelled - order stays open
+        # until it fills or we manually cancel it
+        if response['retCode'] == 0:
+            order_id = response['result']['orderId']
+            logger.info(f"order placed: {side} {qty} BTC at {price} | id: {order_id}]")
+            return order_id
+        else:
+            logger.error(f"order failed: {response['retMsg']}")
+            return None
+    except Exception as e:
+        logger.eroor(f"order placement error: {e}")
+        return None
+
+
+def cancel_order(order_id):
+    # cancel a single open order by its id
+    try:
+        response = session.cancel_order(
+            category=config.CATEGORY,
+            symbol=config.SYMBOL,
+            orderId=order_id
+        )
+        if response['retCode'] == 0:
+            loger.info(f"order cancelled: {order_id}")
+            return True
+        else:
+            logger.error(f"cancel failed: {response['retMsg']}")
+            return False
+    except Exception as e:
+        logger.error(f"cancel error: {e}")
+        return False
+
+
+def cancel_all_orders():
+    # cancel every open order on this symbol
+    # used when bot shuts down or grid shifts
+    try:
+        response = session.cancel_all_orders(
+            category=config.CATEGORY, 
+            symbol=config.SYMBOL
+        )
+        if response['retCode'] == 0:
+            logger.info("all orders cancelled successfully")
+            return True
+        else:
+            logger.error(f"cancel all failed: {response['retMsg']}")
+            return False
+    except Exception as e:
+        logger.error(f"cancel all error: {e}")
+        return False
+
+
+def calculate_order_quantity(price):
+# calculate how many BTC to buy/sell at a given price
+# we want to spend GRID_ORDER_SIZE USDT per order
+# so qty = USDT amount / price
+# round to 6 decimal places - bybit minimum precision for BTC
+    qty = round(config.GRID_ORDER_SIZE / price, 6)
+    return qty
+
+
+def place_grid_orders(buy_levels, sell_levels):
+    # place all buy and sell orders for the current grid
+    # returns a list of all order ids so we can track them
+    order_ids - []
+
+    # place buy orders at each level below current price
+    for price in buuy_levels:
+        qty = calculate_order_qty(price)
+        order_id = place_order("Buy", price, qty)
+        if order_id:
+            order_ids.append(order_id)
+        # small pause between orders at each level to respect api rate limits
+        time.sleep(0.2)
+
+    # place sell orders at each level above current price
+    for price in sell_levels:
+        qty = calculate_order_qty(price)
+        order_id = place_order("Sell", price, qty)
+        if order_id:
+            order_ids.append(order_id)
+        time.sleep(0.2)
+
+    logger.info(f"grid placed: {len(order_ids)} orders total")
+    return order_ids
+
+
+# test balance check on startup
+balance = get_account_balance()
+
+if balance and balance < config.STOP_LOSS_BALANCE:
+    logger.warning(f"balance {balance} is below stopp loss {config.STOP_LOSS_BALANCE}")
+
