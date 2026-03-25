@@ -264,7 +264,7 @@ def place_order(side, price, qty):
             logger.error(f"order failed: {response['retMsg']}")
             return None
     except Exception as e:
-        logger.eroor(f"order placement error: {e}")
+        logger.error(f"order placement error: {e}")
         return None
 
 
