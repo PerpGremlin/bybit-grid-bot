@@ -25,12 +25,12 @@ CATEGORY = 'spot'
 # the lowest price that your grid will reach
 # bot places buy orders down to this level
 # set this at a strong support level on your chart
-GRID_LOWER_PRICE = 44000.0
+GRID_LOWER_PRICE = 54000.0
 
 # this is the highest price your grid will reach
 # bot places sell orders up to this level
 # set this as a strong resistance level on your chart
-GRID_UPPER_PRICE = 84000.0
+GRID_UPPER_PRICE = 94000.0
 
 # how many grid lines to place between lower and upper
 # more levels = smaller gaps = more frequent trades

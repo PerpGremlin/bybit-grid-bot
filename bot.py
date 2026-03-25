@@ -91,3 +91,65 @@ session = HTTP(
 logger.info("bybit session created successfully")
 logger.info(f"testnet mode: {os.getenv('BYBIT_TESTNET', 'true')}")
 
+# ---- grid calculation functions ---------------------------
+
+def calculate_grid_levels(lower, upper, num_levels):
+    # calculate the price gap between each grid level
+    # e.g. range 44000-84000 with 10 levels = 4000 per level
+    interval = (upper - lower) / num_levels
+
+    # build a list of all price levels from bottom to top
+    # each level is lower price + (interval * step number)
+    levels = []
+    for i in range(num_levels + 1):
+        price = lower + (interval * i)
+        # round to 1 decimal place - bybit rejects too many decimals
+        price = round(price, 1)
+        levels.append(price)
+
+    return levels, interval
+
+
+def get_buy_sell_levels(levels, current_price):
+    # split levels into buys and sells based on current price
+    # buy orders go below the current price
+    # sell orders go above the current price
+    buy_levels = [p for p in levels if p < current_price]
+    sell_levels = [p for p in levels if p > current_price]
+
+    return buy_levels, sell_levels
+
+
+def get_current_price():
+    # ask bybit for the current market price
+    # this is a read only request - no orders placed
+    try: 
+        response = session.get_tickers(
+            category=config.CATEGORY,
+            symbol=config.SYMBOL
+        )
+        # extract the last traded price from the response
+        price = float(response['result']['list'][0]['lastPrice'])
+        logger.info(f"currentprice: {price}")
+        return price
+    except Exception as e:
+        # if the request fails, log the error and return None
+        logger.error(f"failed to get price: {e}")
+        return None
+
+
+# test the grid calculation on startup so we can see the levels
+current_price = get_current_price()
+
+if current_price:
+    levels, interval = calculate_grid_levels(
+        config.GRID_LOWER_PRICE,
+        config.GRID_UPPER_PRICE,
+        config.GRID_NUM_LEVELS
+    )
+    buy_levels, sell_levels = get_buy_sell_levels(levels, current_price)
+
+    logger.info(f"grid interval: {interval} USDT per level")
+    logger.info(f"total levels: {len(levels)}")
+    logger.info(f"buy levels: {buy_levels}")
+    logger.info(f"sell levels: {sell_levels}")
