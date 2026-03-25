@@ -442,6 +442,8 @@ def run_bot():
                             )
                         else:
                             logger.warning(f"hard floor reached at {config.TRAIL_HARD_FLOOR} - not trailing down")
+        except SystemExit:
+            raise
         except Exception as e:
             # if anything unexpected happens, log it and keep running
             # we never want the bot to crash silently
@@ -450,10 +452,37 @@ def run_bot():
             continue
 
 
+# ---- shutdown handler -------------------------------------
+
+import signal
+
+def handle_shutdown(signum, frame):
+    # this function runs when the bot receives a stop signal
+    # signum is the signal number (e.g. ctrl+c = signal 2)
+    # frame is the current stack frame - we dont use it
+    logger.info("=== shutdown signal received ===")
+    logger.info("cancelling all open orders before exiting...")
+
+    # cancel everything on the exchange before wee leave
+    # this prevents orphan orders sitting on bybit unmanaged
+    cancel_all_orders()
+
+    logger.info("all orders cancelled - bot stopped cleanly")
+    logger.info("=== grid bot shutdown complete ===")
+
+    # exit with 0 code means clean exit, no errors
+    raise SystemExit(0)
+
+
+# register the shutdown handler for these two signals
+# SIGINT = ctrl+c from the keyboard
+# SIGTERM = kill command from the operating system
+# both will now trigger a clean shutdown instead of crashing
+signal.signal(signal.SIGINT, handle_shutdown)
+signal.signal(signal.SIGTERM, handle_shutdown)
+
 # only run the bot if this file is run directly
-#this prevents the bot starting if bot.py is imported elsewhere
+# this prevents the bot starting if bot.py is imported elsewhere
 if __name__ == "__main__":
+    logger.info("shutdown handler registered - press ctrl+c to stop cleanly")
     run_bot()
-
-
-
