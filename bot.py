@@ -51,6 +51,12 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+os.environ['PYTHONUNBUFFERED'] = '1'
+
+# force logs to print immediately without buffering
+# loggin.getLogger().handlers[1].flush = lambda: None
+# import sys
+# sys.stdout.reconfigure(line_buffering=True)
 
 # create the logger objects
 # we use this throughout the bot to write log messages
@@ -300,7 +306,7 @@ def cancel_all_orders():
         return False
 
 
-def calculate_order_quantity(price):
+def calculate_order_qty(price):
 # calculate how many BTC to buy/sell at a given price
 # we want to spend GRID_ORDER_SIZE USDT per order
 # so qty = USDT amount / price
@@ -312,10 +318,10 @@ def calculate_order_quantity(price):
 def place_grid_orders(buy_levels, sell_levels):
     # place all buy and sell orders for the current grid
     # returns a list of all order ids so we can track them
-    order_ids - []
+    order_ids = []
 
     # place buy orders at each level below current price
-    for price in buuy_levels:
+    for price in buy_levels:
         qty = calculate_order_qty(price)
         order_id = place_order("Buy", price, qty)
         if order_id:
@@ -340,4 +346,114 @@ balance = get_account_balance()
 
 if balance and balance < config.STOP_LOSS_BALANCE:
     logger.warning(f"balance {balance} is below stopp loss {config.STOP_LOSS_BALANCE}")
+
+
+# ---- main loop --------------------------------------------
+
+def run_bot():
+    # this is the main function that runs the bot forever
+    # it loops contionuously until stopped with ctrl+c
+    logger.info("=== starting main loop ===")
+
+    # place the initial grid of orders on startup
+    logger.info("placing initial grid orders...")
+    current_price = get_current_price()
+
+    if not current_price:
+        logger.error("could not get price - cannot start bot")
+        return
+
+    # calculate and place the first grid
+    levels, interval = calculate_grid_levels(
+        config.GRID_LOWER_PRICE,
+        config.GRID_UPPER_PRICE,
+        config.GRID_NUM_LEVELS
+    )
+    buy_levels, sell_levels = get_buy_sell_levels(levels, current_price)
+    active_order_ids = place_grid_orders(buy_levels, sell_levels)
+    logger.info(f"initial grid placed with {len(active_order_ids)} orders")
+
+    # store current grid boundaries so we can detect when
+    # price moves outside them and the grid needs to trail
+    grid_lower = config.GRID_LOWER_PRICE
+    grid_upper = config.GRID_UPPER_PRICE
+
+    # main loops runs forever until stopped
+    while True:
+        try:
+            # wait for the configures interval before checking
+            # this prevents hammering bybit's api
+            logger.info(f"sleeping {config.LOOP_INTERVAL_SECONDS} seconds...")
+            time.sleep(config.LOOP_INTERVAL_SECONDS)
+
+            # --- check current price ---
+            current_price = get_current_price()
+            if not current_price:
+                logger.warning("could not get price this loop - skipping")
+                continue
+
+            # --- check account balance ---
+            balance = get_account_balance()
+            if balance and balance < config.STOP_LOSS_BALANCE:
+                logger.error(f"balance {balance} below stop loss {config.STOP_LOSS_BALANCE} - shutting down")
+                cancel_all_orders()
+                return
+
+            # --- check if trailing is needed ---
+            if config.TRAILING_ENABLED:
+                # calculate how far price has moved past grid edge
+                trail_distance = interval * config.TRAIL_TRIGGER
+
+                # check if price has moved above the upper boundary
+                if current_price > grid_upper - trail_distance:
+                    if config.TRAIL_DIRECTION in ["both", "up"]:
+                        logger.info("price near upper boundery - trailing grid up")
+                        # shift grid up by one interval
+                        grid_lower = grid_lower + interval
+                        grid_upper = grid_upper + interval
+                        logger.info(f"new grid range: {grid_lower} - {grid_upper}")
+                        # cancel existing orders and place a new grid
+                        cancel_all_orders()
+                        levels, interval = calculate_grid_levels(
+                            grid_lower, grid_upper, config.GRID_NUM_LEVELS
+                        )
+                        buy_levels, sell_levels, = get_buy_sell_levels(
+                            levels, current_price
+                        )
+                        active_order_ids = place_grid_orders(
+                            buy_levels, sell_levels
+                        )
+
+                # check if price has moved below the lower boundary
+                elif current_price < grid_lower + trail_distance:
+                    if config.TRAIL_DIRECTION in ["both", "down"]:
+                        # respect the hard floor setting
+                        if grid_lower - interval >= TRAIL_HARD_FLOOR:
+                            logger.info(f"new grid range: {grid_lower} - {grid_upper}")
+                            cancel_all_orders()
+                            levels, interval = calculate_grid_levels(
+                                grid_lower, grid_upperconfig.GRID_NUM_LEVELS
+                            )
+                            buy_levels, sell_levels, = get_buy_sell_levels(
+                                levels, current_price
+                            )
+                            active_order_ids = place_grid_orders(
+                                buy_levels, sell_levels
+                            )
+                        else:
+                            logger.warning(f"hard floor reached at {config.TRAIL_HARD_FLOOR} - not trailing down")
+        except Exception as e:
+            # if anything unexpected happens, log it and keep running
+            # we never want the bot to crash silently
+            logger.error(f"error in main loop: {e}")
+            logger.info("continuing despite error...")
+            continue
+
+
+# only run the bot if this file is run directly
+#this prevents the bot starting if bot.py is imported elsewhere
+if __name__ == "__main__":
+    run_bot()
+
+
 
