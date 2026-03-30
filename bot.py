@@ -428,7 +428,7 @@ def run_bot():
                 elif current_price < grid_lower + trail_distance:
                     if config.TRAIL_DIRECTION in ["both", "down"]:
                         # respect the hard floor setting
-                        if grid_lower - interval >= TRAIL_HARD_FLOOR:
+                        if grid_lower - interval >= config.TRAIL_HARD_FLOOR:
                             logger.info(f"new grid range: {grid_lower} - {grid_upper}")
                             cancel_all_orders()
                             levels, interval = calculate_grid_levels(
