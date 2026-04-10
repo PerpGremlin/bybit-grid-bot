@@ -471,6 +471,7 @@ def run_bot():
     # this is the main function that runs the bot forever
     # it loops contionuously until stopped with ctrl+c
     logger.info("=== starting main loop ===")
+    send_telegram(f"=== grid bot started ===\ngrid: {config.GRID_LOWER_PRICE} - {config.GRID_UPPER_PRICE}\ntestnet: {os.getenv('BYBIT_TESTNET', 'true')}")
 
     # place the initial grid of orders on startup
     logger.info("placing initial grid orders...")
