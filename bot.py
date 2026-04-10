@@ -305,6 +305,77 @@ def cancel_all_orders():
         logger.error(f"cancel all error: {e}")
         return False
 
+def get_open_orders():
+    # ask bybit for all currently open orders on this symbol
+    # returns a list of dicts with price and side for each open order
+    # we use this to compare against our grid levels each loop
+    try:
+        response = session.get_open_orders(
+            category=config.CATEGORY,
+            symbol=config.SYMBOL
+        )
+
+        if response['retCode'] == 0:
+            orders = response['result']['list']
+            logger.info(f"open orders on exchange: {len(orders)}")
+            return orders
+        else:
+            logger.error(f"failed to get open orders: {response['retMsg']}")
+            return []
+    except Exception as e:
+        logger.error(f"failed to get open orders: {e}")
+        return []
+
+def check_and_replenish(grid_levels, interval):
+    # compare open orders against our grid levels
+    # find any levels where the order has filled and is missing
+    # place the correct replacement order at that level
+    # buy filled = place sell one interval above
+    # sell filled = place buy one interval below
+
+    # get all currently open orders from bybit
+    open_orders = get_open_orders()
+
+    # extract the prices of all open orders into a set
+    # rounded to 1 decimal to match our grid level format
+    open_prices = set()
+    for order in open_orders:
+        open_prices.add(round(float(order['price']), 1))
+
+    # get current price so we know which side of the market we are on
+    curent_price = get_current_price()
+    if not current_price:
+        logger.warning("could not get price for replenishment check - skipping")
+        return
+
+    # check each grid level to see if it has an open order
+    for level in grid_levels:
+        level = round(level, 1)
+
+        # if this level has an open order - nothing to do, move on
+        if level in open_prices:
+            continue
+
+        # this level has no open order - it must be filled
+        # work out what filled and what to place as replacement
+        if level < current_price:
+            # this was a buy order that filled
+            # place a sell one level above it to take profit
+            sell_price = round(level + interval, 1)
+            qty = calculate_order_qty(sell_price)
+            logger.info(f"buy filled at {level} - placing sell at {sell_price}")
+            place_order("Sell", sell_price, qty)
+            time.sleep(0.2)
+
+        elif level > current_price:
+            # this was a sell order that filled
+            # place a buy order one intervl below it to reload
+            buy_price = round(level - interval, 1)
+            qty = calculate_order_qty(buy_price)
+            logger.info(f"sell filled at {level} - placing buy at {buy_price}")
+            place_order("Buy", buy_price, qty)
+            time.sleep(0.2)
+
 
 def calculate_order_qty(price):
 # calculate how many BTC to buy/sell at a given price
@@ -392,6 +463,11 @@ def run_bot():
                 logger.warning("could not get price this loop - skipping")
                 continue
 
+            # --- check and replenish filled orders ---
+            # compares open orders against grid levels each loop
+            # replaces any filled orders with the correct counter order
+            check_and_replenish(levels, interval)
+            
             # --- check account balance ---
             balance = get_account_balance()
             if balance and balance < config.STOP_LOSS_BALANCE:
