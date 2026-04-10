@@ -277,7 +277,7 @@ def cancel_order(order_id):
             orderId=order_id
         )
         if response['retCode'] == 0:
-            loger.info(f"order cancelled: {order_id}")
+            logger.info(f"order cancelled: {order_id}")
             return True
         else:
             logger.error(f"cancel failed: {response['retMsg']}")
@@ -417,7 +417,7 @@ def run_bot():
                         levels, interval = calculate_grid_levels(
                             grid_lower, grid_upper, config.GRID_NUM_LEVELS
                         )
-                        buy_levels, sell_levels, = get_buy_sell_levels(
+                        buy_levels, sell_levels = get_buy_sell_levels(
                             levels, current_price
                         )
                         active_order_ids = place_grid_orders(
@@ -432,9 +432,9 @@ def run_bot():
                             logger.info(f"new grid range: {grid_lower} - {grid_upper}")
                             cancel_all_orders()
                             levels, interval = calculate_grid_levels(
-                                grid_lower, grid_upperconfig.GRID_NUM_LEVELS
+                                grid_lower, grid_upper, config.GRID_NUM_LEVELS
                             )
-                            buy_levels, sell_levels, = get_buy_sell_levels(
+                            buy_levels, sell_levels = get_buy_sell_levels(
                                 levels, current_price
                             )
                             active_order_ids = place_grid_orders(
