@@ -13,6 +13,12 @@
 # HTTP is used for standard request/response calls 
 from pybit.unified_trading import HTTP
 
+# urllib is used for sending telegram alerts
+# we use urllib instead of requests because requests
+# conflicts with the pybit library
+import urllib.request
+import urllib.parse
+
 # dotenv loads our .env file so python can read our api keys 
 from dotenv import load_dotenv
 
@@ -34,6 +40,43 @@ import math
 # config id our own file - imports all our trading strategies
 # this is how bot.py reads everything from config.py
 import config
+
+
+# ---- telegram alert function ------------------------------
+
+def send_telegram(message):
+    # sends us a message to the telegram group chat
+    # uses urllib to avoid conflicts with pybit
+    # if telegram fails we log the error but never crash the bot
+    try:
+        # load telegram credentials from .env
+        bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        chat_id = os.getenv("TELEGRAM_CHAT_ID")
+
+        # if credentials are missing skip silently
+        # lets the bot run without telegram if needed
+        if not bot_token or not chat_id:
+            logger.warning("telegram credentials not found - skipping alert")
+            return
+
+        # build the telegram api url
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+
+        # encode the message data
+        data = urllib.parse.urlencode({
+            "chat_id": chat_id,
+            "text": f"🤖 Grid Bot\n{message}",
+            "parse_mode": "HTML"
+        }).encode("utf-8")
+
+        # send the request with a 10 second timeout
+        req = urllib.request.Request(url, data=data)
+        urllib.request.urlopen(req, timeout=10)
+        logger.info(f"telegram alert sent: {message}")
+
+    except Exception as e:
+        # never let a telegram failure crash the bot
+        logger.error(f"telegram alert failed: {e}")
 
 
 # ---- logging setup ----------------------------------------
@@ -65,6 +108,7 @@ logger = logging.getLogger(__name__)
 
 # write the first log entry so we know the bot started
 logger.info("=== grid bot starting up ===")
+send_telegram(f"=== bot starting up ===\ngrid: {config.GRID_LOWER_PRICE} - {config.GRID_UPPER_PRICE}")
 logger.info(f"symbol: {config.SYMBOL} | category: {config.CATEGORY}")
 logger.info(f"grid range: {config.GRID_LOWER_PRICE} - {config.GRID_UPPER_PRICE}")
 logger.info(f"grid levels:{config.GRID_NUM_LEVELS} | order size: {config.GRID_ORDER_SIZE} USDT")
@@ -364,6 +408,7 @@ def check_and_replenish(grid_levels, interval):
             sell_price = round(level + interval, 1)
             qty = calculate_order_qty(sell_price)
             logger.info(f"buy filled at {level} - placing sell at {sell_price}")
+            send_telegram(f"buy filled at {level} - sell placed at {sell_price}")
             place_order("Sell", sell_price, qty)
             time.sleep(0.2)
 
@@ -373,6 +418,7 @@ def check_and_replenish(grid_levels, interval):
             buy_price = round(level - interval, 1)
             qty = calculate_order_qty(buy_price)
             logger.info(f"sell filled at {level} - placing buy at {buy_price}")
+            send_telegram(f"sell filled at {level} - placing buy at {buy_price}")
             place_order("Buy", buy_price, qty)
             time.sleep(0.2)
 
@@ -443,6 +489,7 @@ def run_bot():
     buy_levels, sell_levels = get_buy_sell_levels(levels, current_price)
     active_order_ids = place_grid_orders(buy_levels, sell_levels)
     logger.info(f"initial grid placed with {len(active_order_ids)} orders")
+    send_telegram(f"initial grid placed - {len(active_order_ids)} orders active")
 
     # store current grid boundaries so we can detect when
     # price moves outside them and the grid needs to trail
@@ -472,6 +519,7 @@ def run_bot():
             balance = get_account_balance()
             if balance and balance < config.STOP_LOSS_BALANCE:
                 logger.error(f"balance {balance} below stop loss {config.STOP_LOSS_BALANCE} - shutting down")
+                send_telegram(f"⚠️ STOP LOSS HIT — balance {balance} USDT — shutting down")
                 cancel_all_orders()
                 return
 
@@ -483,7 +531,8 @@ def run_bot():
                 # check if price has moved above the upper boundary
                 if current_price > grid_upper - trail_distance:
                     if config.TRAIL_DIRECTION in ["both", "up"]:
-                        logger.info("price near upper boundery - trailing grid up")
+                        logger.info("price near upper boundary - trailing grid up")
+                        send_telegram(f"trailing grid UP - new range {grid_lower + interval} - {grid_upper + interval}")
                         # shift grid up by one interval
                         grid_lower = grid_lower + interval
                         grid_upper = grid_upper + interval
@@ -506,6 +555,7 @@ def run_bot():
                         # respect the hard floor setting
                         if grid_lower - interval >= config.TRAIL_HARD_FLOOR:
                             logger.info(f"new grid range: {grid_lower} - {grid_upper}")
+                            send_telegram(f"grid trailing DOWN - new range: {grid_lower + interval} - {grid_upper + interval}")
                             cancel_all_orders()
                             levels, interval = calculate_grid_levels(
                                 grid_lower, grid_upper, config.GRID_NUM_LEVELS
@@ -544,6 +594,7 @@ def handle_shutdown(signum, frame):
     cancel_all_orders()
 
     logger.info("all orders cancelled - bot stopped cleanly")
+    send_telegram("bot stopped cleanly — all orders cancelled")
     logger.info("=== grid bot shutdown complete ===")
 
     # exit with 0 code means clean exit, no errors
