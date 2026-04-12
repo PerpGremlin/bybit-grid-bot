@@ -525,20 +525,9 @@ def run_bot():
                 logger.warning("could not get price this loop - skipping")
                 continue
 
-            # --- check and replenish filled orders ---
-            # compares open orders against grid levels each loop
-            # replaces any filled orders with the correct counter order
-            check_and_replenish(levels, interval)
-            
-            # --- check account balance ---
-            balance = get_account_balance()
-            if balance and balance < config.STOP_LOSS_BALANCE:
-                logger.error(f"balance {balance} below stop loss {config.STOP_LOSS_BALANCE} - shutting down")
-                send_telegram(f"⚠️ STOP LOSS HIT — balance {balance} USDT — shutting down")
-                cancel_all_orders()
-                return
-
-            # --- check if trailing is needed ---
+            # --- check if trailing is needed FIRST ---
+            # trailing must run before replenishment
+            # so the grids shift before we check for missing orders
             if config.TRAILING_ENABLED:
                 # calculate how far price has moved past grid edge
                 trail_distance = interval * config.TRAIL_TRIGGER
@@ -569,8 +558,10 @@ def run_bot():
                     if config.TRAIL_DIRECTION in ["both", "down"]:
                         # respect the hard floor setting
                         if grid_lower - interval >= config.TRAIL_HARD_FLOOR:
-                            logger.info(f"new grid range: {grid_lower} - {grid_upper}")
-                            send_telegram(f"grid trailing DOWN - new range: {grid_lower + interval} - {grid_upper + interval}")
+                            logger.info("price near lower boundary - trailing grid down")
+                            grid_lower = grid_lower - interval
+                            grid_upper = grid_upper - interval
+                            send_telegram(f"grid trailing DOWN - new range: {grid_lower} - {grid_upper}")
                             cancel_all_orders()
                             levels, interval = calculate_grid_levels(
                                 grid_lower, grid_upper, config.GRID_NUM_LEVELS
@@ -583,6 +574,19 @@ def run_bot():
                             )
                         else:
                             logger.warning(f"hard floor reached at {config.TRAIL_HARD_FLOOR} - not trailing down")
+
+            # --- check and replenish filled orders AFTER trailing --- 
+            # uses updated levels if grid just shifted
+            check_and_replenish(levels, interval)
+
+            # --- check account balance ---
+            balance = get_account_balance()
+            if balance and balance < config.STOP_LOSS_BALANCE:
+                logger.error(f"balance {balance} below stop loss {config.STOP_LOSS_BALANCE} - shutting down")
+                send_telegram(f"⚠️ STOP LOSS HIT — balance {balance} USDT — shutting down")
+                cancel_all_orders()
+                return
+
         except SystemExit:
             raise
         except Exception as e:
