@@ -108,7 +108,6 @@ logger = logging.getLogger(__name__)
 
 # write the first log entry so we know the bot started
 logger.info("=== grid bot starting up ===")
-send_telegram(f"=== bot starting up ===\ngrid: {config.GRID_LOWER_PRICE} - {config.GRID_UPPER_PRICE}")
 logger.info(f"symbol: {config.SYMBOL} | category: {config.CATEGORY}")
 logger.info(f"grid range: {config.GRID_LOWER_PRICE} - {config.GRID_UPPER_PRICE}")
 logger.info(f"grid levels:{config.GRID_NUM_LEVELS} | order size: {config.GRID_ORDER_SIZE} USDT")
@@ -374,8 +373,7 @@ def check_and_replenish(grid_levels, interval):
     # compare open orders against our grid levels
     # find any levels where the order has filled and is missing
     # place the correct replacement order at that level
-    # buy filled = place sell one interval above
-    # sell filled = place buy one interval below
+    # includes a check to avoid placing duplicates
 
     # get all currently open orders from bybit
     open_orders = get_open_orders()
@@ -393,6 +391,7 @@ def check_and_replenish(grid_levels, interval):
         return
 
     # check each grid level to see if it has an open order
+    replenished = 0
     for level in grid_levels:
         level = round(level, 1)
 
@@ -404,23 +403,38 @@ def check_and_replenish(grid_levels, interval):
         # work out what filled and what to place as replacement
         if level < current_price:
             # this was a buy order that filled
-            # place a sell one level above it to take profit
+            # place a sell one interval above it to take profit
             sell_price = round(level + interval, 1)
-            qty = calculate_order_qty(sell_price)
-            logger.info(f"buy filled at {level} - placing sell at {sell_price}")
-            send_telegram(f"buy filled at {level} - sell placed at {sell_price}")
-            place_order("Sell", sell_price, qty)
-            time.sleep(0.2)
+            
+            # only place if sell price is not already in open orders
+            if sell_price not in open_prices:
+                qty = calculate_order_qty(sell_price)
+                logger.info(f"buy filled at {level} - placing sell at {sell_price}")
+                order_id = place_order("Sell", sell_price, qty)
+                if order_id:
+                    open_prices.add(sell_price)
+                    replenished += 1
+                    send_telegram(f"buy filled at {level} - sell placed at {sell_price}")
+                time.sleep(0.2)
 
         elif level > current_price:
             # this was a sell order that filled
-            # place a buy order one intervl below it to reload
+            # place a buy order one interval below it to reload
             buy_price = round(level - interval, 1)
-            qty = calculate_order_qty(buy_price)
-            logger.info(f"sell filled at {level} - placing buy at {buy_price}")
-            send_telegram(f"sell filled at {level} - placing buy at {buy_price}")
-            place_order("Buy", buy_price, qty)
-            time.sleep(0.2)
+
+            # only place if buy ptice is not already in open orders
+            if buy_price not in open_prices:
+                qty = calculate_order_qty(buy_price)
+                logger.info(f"sell filled at {level} - placing buy at {buy_price}")
+                order_id = place_order("Buy", buy_price, qty)
+                if order_id:
+                    open_prices.add(buy_price)
+                    replenished += 1        
+                    send_telegram(f"sell filled at {level} - placing buy at {buy_price}")
+                time.sleep(0.2)
+
+    if replenished > 0:
+        logger.info(f"replenished {replenished} orders this loop")
 
 
 def calculate_order_qty(price):
