@@ -25,18 +25,18 @@ CATEGORY = 'spot'
 # the lowest price that your grid will reach
 # bot places buy orders down to this level
 # set this at a strong support level on your chart
-GRID_LOWER_PRICE = 54000.0
+GRID_LOWER_PRICE = 15000.0
 
 # this is the highest price your grid will reach
 # bot places sell orders up to this level
 # set this as a strong resistance level on your chart
-GRID_UPPER_PRICE = 94000.0
+GRID_UPPER_PRICE = 134000.0
 
 # how many grid lines to place between lower and upper
 # more levels = smaller gaps = more frequent trades
 # fewer levels = bigger gaps = larger profit per trade
 # 10 is a good starting point for testing
-GRID_NUM_LEVELS = 10
+GRID_NUM_LEVELS = 17
 
 # ---- order sizing -----------------------------------------
 
@@ -44,7 +44,7 @@ GRID_NUM_LEVELS = 10
 # total capital at work = GRID_ORDER_SIZE x GRID_NUM_LEVELS
 # e.g. 50 USDT x 10 levels = 500 USDT total 
 # keep this small while testing on testnet
-GRID_ORDER_SIZE = 50.0
+GRID_ORDER_SIZE = 500.0
 
 # ---- safety settings --------------------------------------
 
@@ -52,7 +52,7 @@ GRID_ORDER_SIZE = 50.0
 # if account balance drops below this number (in USDT)
 # protects you in a strong trending market
 # set this below your starting balance but above zero
-STOP_LOSS_BALANCE = 800.0
+STOP_LOSS_BALANCE = 42000.0
 
 # maximum number of open orders allowed at any time
 # safety cap - prevents order spam if something breaks
@@ -102,7 +102,7 @@ TRAIL_DIRECTION = "both"
 # hard floor - if TRAIL_DIRECTION is "up", the grid will
 # never trail below this price. acts as your absolute
 # stop level based on your macro support analysis
-TRAIL_HARD_FLOOR = 44000.0
+TRAIL_HARD_FLOOR = 10000.0
 
 # directional bias - ratio of buy orders to sell orders.
 # 1.0 = perfectly neutral, equal buys and sells
