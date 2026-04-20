@@ -209,78 +209,47 @@ if current_price:
 
 
 # ---- order placement functions ----------------------------
+# ---- function displaying all asset balances ------
 
 def get_account_balance():
-    # ask bybit for our current USDT balance
-    # we use this to check against against out STOP_LOSS_BALANCE
-    try:
-        response = session.get_wallet_balance(
-            accountType="UNIFIED"
-        )
-        # dig into the response to find USDT balance
-        # the coin list contains all assets in the account
-        coin_list = response['result']['list'][0]['coin']
+   # ask bybit for all assets in the unified trading account
+   # displays any asset with a USD value over $1
+   # returns USDT balance for the stop loss check
+   try:
+       response = session.get_wallet_balance(
+           accountType="UNIFIED"
+       )
+       # get the coin list from the response
+       coin_list = response['result']['list'][0]['coin']
 
-        # if coin list is empty, no funds are in the unified trading account
-        if not coin_list:
-            logger.warning("no funds found in unified trading account")
-            return None
+       # if coin list is empty, no funds in unified account
+       if not coin_list:
+           logger.warning("no funds found in unified account")
+           return None
 
-        # loop through coins to find USDT
-        for coin in coin_list:
-            if coin['coin'] == 'USDT':
-                balance = float(coin['walletBalance'])
-                logger.info(f"account balance: {balance} USDT")
-                return balance
+       # log total account equity first
+       total_equity = response['result']['list'][0]['totalEquity']
+       logger.info(f"total account equity: ${float(total_equity):,.2f}")
+       logger.info("--- assets with value over $1 ---")
 
-        logger.warning("USDT balance not found in unified trading account")
-        return None
+       # loop through all coins and display those worth over $1
+       usdt_balance = None
+       for coin in coin_list:
+           usd_value = float(coin['usdValue'])
+           if usd_value > 1:
+               wallet_balance = float(coin['walletBalance'])
+               coin_name = coin['coin']
+               logger.info(f"{coin_name}: {wallet_balance} (${usd_value:,.2f})")
+               # save USDT balance separately for stop loss check
+               if coin_name == 'USDT':
+                   usdt_balance = wallet_balance
 
-    except Exception as e:
-        logger.error(f"failed to get balance: {e}")
-        return None
+       logger.info("--- end of assets ---")
+       return float(total_equity)
 
-# ---- alternate function displaying all asset balances ------
-
-# def get_account_balance():
-#    # ask bybit for all assets in the unified trading account
-#    # displays any asset with a USD value over $1
-#    # returns USDT balance for the stop loss check
-#    try:
-#        response = session.get_wallet_balance(
-#            accountType="UNIFIED"
-#        )
-#        # get the coin list from the response
-#        coin_list = response['result']['list'][0]['coin']
-#
-#        # if coin list is empty, no funds in unified account
-#        if not coin_list:
-#            logger.warning("no funds found in unified account")
-#            return None
-#
-#        # log total account equity first
-#        total_equity = response['result']['list'][0]['totalEquity']
-#        logger.info(f"total account equity: ${float(total_equity):,.2f}")
-#        logger.info("--- assets with value over $1 ---")
-#
-#        # loop through all coins and display those worth over $1
-#        usdt_balance = None
-#        for coin in coin_list:
-#            usd_value = float(coin['usdValue'])
-#            if usd_value > 1:
-#                wallet_balance = float(coin['walletBalance'])
-#                coin_name = coin['coin']
-#                logger.info(f"{coin_name}: {wallet_balance} (${usd_value:,.2f})")
-#                # save USDT balance separately for stop loss check
-#                if coin_name == 'USDT':
-#                    usdt_balance = wallet_balance
-#
-#        logger.info("--- end of assets ---")
-#        return usdt_balance
-#
-#    except Exception as e:
-#        logger.error(f"failed to get balance: {e}")
-#        return None
+   except Exception as e:
+       logger.error(f"failed to get balance: {e}")
+       return None
 
 def place_order(side, price, qty):
     # place a single limit order on bybit
@@ -385,7 +354,7 @@ def check_and_replenish(grid_levels, interval):
         open_prices.add(round(float(order['price']), 1))
 
     # get current price so we know which side of the market we are on
-    curent_price = get_current_price()
+    current_price = get_current_price()
     if not current_price:
         logger.warning("could not get price for replenishment check - skipping")
         return
